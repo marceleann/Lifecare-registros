@@ -1,10 +1,20 @@
 
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, Shift, Report, ChecklistItem, Form, FormResponse, Announcement } from '../types';
+import { User, Shift, Report, ChecklistItem, Form, Announcement } from '../types';
 import { BASE_CHECKLIST } from '../constants';
-import { sendEmail, generateCheckInEmail, generateCheckOutEmail, generateReportEmail, generatePasswordResetEmail } from '../services/emailService';
-import { auth, db, saveDoc, addDocument, updateDocument } from '../services/firebaseService';
-import { onAuthStateChanged, signInWithEmailAndPassword, signOut, sendPasswordResetEmail } from 'firebase/auth';
+import { sendEmail, generateCheckInEmail, generateCheckOutEmail, generateReportEmail } from '../services/emailService';
+// Importando TUDO do nosso serviço local para manter consistência
+import { 
+  auth, 
+  db, 
+  saveDoc, 
+  addDocument, 
+  updateDocument,
+  onAuthStateChanged,
+  signInWithEmailAndPassword,
+  signOut,
+  sendPasswordResetEmail
+} from '../services/firebaseService';
 import { collection, onSnapshot, doc, deleteDoc } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { Loader2 } from 'lucide-react';
@@ -52,11 +62,17 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
   const [notifications, setNotifications] = useState<string[]>([]);
 
   useEffect(() => {
-    const unsubscribeAuth = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        // Perfil completo carregado via onSnapshot
-      } else {
+    // Timer de segurança de 2 segundos para não travar no loading
+    const safetyTimer = setTimeout(() => {
+      setIsLoading(false);
+    }, 2000);
+
+    // Fix: Use any for firebaseUser callback parameter to bypass 'User' export issue in certain environments
+    const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser: any) => {
+      if (!firebaseUser) {
         setCurrentUser(null);
+        setIsLoading(false);
+        clearTimeout(safetyTimer);
       }
     });
 
@@ -69,6 +85,11 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
         if (profile) setCurrentUser(profile);
       }
       setIsLoading(false);
+      clearTimeout(safetyTimer);
+    }, (error) => {
+      console.error("Erro Firestore:", error);
+      setIsLoading(false);
+      clearTimeout(safetyTimer);
     });
 
     const unsubShifts = onSnapshot(collection(db, 'shifts'), (s) => setShifts(s.docs.map(d => ({id: d.id, ...d.data()})) as any));
@@ -79,7 +100,15 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
         setAnnouncements(sorted as any);
     });
 
-    return () => { unsubscribeAuth(); unsubUsers(); unsubShifts(); unsubReports(); unsubForms(); unsubAnn(); };
+    return () => { 
+      unsubscribeAuth(); 
+      unsubUsers(); 
+      unsubShifts(); 
+      unsubReports(); 
+      unsubForms(); 
+      unsubAnn();
+      clearTimeout(safetyTimer);
+    };
   }, []);
 
   const login = async (email: string, role: string, password?: string) => {
@@ -87,8 +116,8 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
       setIsLoading(true);
       await signInWithEmailAndPassword(auth, email, password || '12345678');
       return true;
-    } catch (error) {
-      console.error("Login error:", error);
+    } catch (error: any) {
+      console.error("Erro no Login:", error);
       alert("Credenciais inválidas. Verifique seu email e senha.");
       return false;
     } finally {
@@ -101,7 +130,7 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
   const resetPassword = async (email: string) => {
     try {
       await sendPasswordResetEmail(auth, email);
-      addNotification("Link de redefinição enviado com sucesso.");
+      addNotification("Link enviado com sucesso.");
       return true;
     } catch (e) {
       alert("Erro ao solicitar redefinição.");
@@ -112,7 +141,7 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
   const checkIn = async (shiftId: string) => {
     const now = new Date().toISOString();
     await updateDocument('shifts', shiftId, { status: 'active', checkIn: now });
-    addNotification("Check-in sincronizado com o servidor.");
+    addNotification("Check-in confirmado.");
     const shift = shifts.find(s => s.id === shiftId);
     if (shift && currentUser) sendEmail(generateCheckInEmail(currentUser.name, shift.clientName, format(new Date(now), "HH:mm")));
   };
@@ -120,7 +149,7 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
   const checkOut = async (shiftId: string) => {
     const now = new Date().toISOString();
     await updateDocument('shifts', shiftId, { status: 'completed', checkOut: now });
-    addNotification("Plantão finalizado e salvo no servidor.");
+    addNotification("Plantão finalizado.");
     const shift = shifts.find(s => s.id === shiftId);
     if (shift && currentUser) sendEmail(generateCheckOutEmail(currentUser.name, shift.clientName, format(new Date(now), "HH:mm")));
   };
@@ -140,7 +169,7 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
       date: new Date().toISOString()
     };
     await addDocument('reports', newReport);
-    addNotification("Relatório salvo no servidor.");
+    addNotification("Relatório salvo.");
     sendEmail(generateReportEmail(currentUser.name, reportData.clientName || "Cliente", reportData.generalState));
   };
 
@@ -153,7 +182,7 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
       customChecklist: userData.role === 'client' ? BASE_CHECKLIST : null
     };
     await saveDoc('users', id, newUser);
-    addNotification("Usuário cadastrado no servidor.");
+    addNotification("Usuário cadastrado.");
   };
 
   const updateClientChecklist = async (userId: string, checklist: ChecklistItem[]) => {
@@ -177,12 +206,12 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
       checklist: client.customChecklist || BASE_CHECKLIST
     };
     await addDocument('shifts', newShift);
-    addNotification("Plantão agendado no servidor.");
+    addNotification("Plantão agendado.");
   };
 
   const deleteShift = async (id: string) => {
       await deleteDoc(doc(db, 'shifts', id));
-      addNotification("Plantão removido do servidor.");
+      addNotification("Plantão removido.");
   };
 
   const addAnnouncement = async (annData: any) => {
@@ -218,7 +247,7 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
       await updateDocument('forms', formId, {
           responses: [...form.responses, newResponse]
       });
-      addNotification("Resposta enviada com sucesso.");
+      addNotification("Resposta enviada.");
   };
 
   const addNotification = (msg: string) => {
@@ -226,9 +255,9 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
     setTimeout(() => setNotifications(prev => prev.slice(0, prev.length - 1)), 5000);
   };
 
-  const refreshData = async () => { /* Firebase handles real-time sync */ };
-  const resetSystemData = () => { /* No manual reset for production */ };
-  const updateUserPassword = () => { /* Use Firebase Auth Reset */ };
+  const refreshData = async () => { /* Sync automático */ };
+  const resetSystemData = () => { /* Proteção */ };
+  const updateUserPassword = () => { /* Auth */ };
 
   const exportToGoogleSheets = (data: any[], filename: string) => {
     if (!data.length) return;

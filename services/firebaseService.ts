@@ -1,15 +1,22 @@
+
+// Fix: Use standard modular imports from firebase packages and avoid export-from shorthand if it causes resolution issues
 import { initializeApp } from 'firebase/app';
-import { getAuth } from 'firebase/auth';
+import { 
+  getAuth, 
+  onAuthStateChanged, 
+  signInWithEmailAndPassword, 
+  signOut, 
+  sendPasswordResetEmail 
+} from 'firebase/auth';
 import { getFirestore, doc, setDoc, collection, getDocs, addDoc, updateDoc } from 'firebase/firestore';
 import { FIREBASE_CONFIG } from '../constants';
 
-// --- INICIALIZAÇÃO FIREBASE ---
-// Fixed initializeApp import error by ensuring correct modular SDK usage and cleanup
+// Inicialização
 const app = initializeApp(FIREBASE_CONFIG);
 export const auth = getAuth(app);
 export const db = getFirestore(app);
 
-// Helpers de Firestore
+// Helpers para Firestore
 export const saveDoc = async (collectionName: string, id: string, data: any) => {
   await setDoc(doc(db, collectionName, id), data, { merge: true });
 };
@@ -29,4 +36,12 @@ export const getCollection = async (collectionName: string) => {
 export const updateDocument = async (collectionName: string, id: string, data: any) => {
   const docRef = doc(db, collectionName, id);
   await updateDoc(docRef, data);
+};
+
+// Fix: Export the named functions that were imported above to ensure they are available to the Context
+export { 
+  onAuthStateChanged, 
+  signInWithEmailAndPassword, 
+  signOut, 
+  sendPasswordResetEmail 
 };
