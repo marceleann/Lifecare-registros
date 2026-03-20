@@ -7,16 +7,19 @@ export interface ChecklistItem {
   completed: boolean;
   time?: string;
   required: boolean;
+  daysOfWeek?: number[]; // 0=Sun, 1=Mon, ..., 6=Sat
+  specificDate?: string; // YYYY-MM-DD format
 }
 
 export interface User {
   id: string;
   name: string;
   email: string;
-  role: UserRole;
+  role: 'admin' | 'caregiver' | 'client';
   avatar?: string;
-  password?: string; // Campo de senha adicionado para segurança e validação
-  customChecklist?: ChecklistItem[]; // New: Custom activities per client
+  customChecklist?: ChecklistItem[]; // Apenas para clients
+  prontuario?: string;
+  prontuarioHistory?: { date: string; text: string; author: string }[];
 }
 
 export interface Shift {
@@ -25,12 +28,23 @@ export interface Shift {
   caregiverName: string;
   clientId: string;
   clientName: string;
-  startScheduled: string; // ISO String
-  endScheduled: string; // ISO String
-  checkIn?: string; // ISO String
-  checkOut?: string; // ISO String
-  status: 'scheduled' | 'active' | 'completed' | 'missed';
+  startScheduled: string;
+  endScheduled: string;
+  checkIn?: string;
+  checkOut?: string;
+  handoverNote?: string; // Passagem de plantão
+  status: 'scheduled' | 'active' | 'completed';
   checklist: ChecklistItem[];
+}
+
+export interface Emergency {
+  id: string;
+  caregiverId: string;
+  caregiverName: string;
+  clientId: string;
+  clientName: string;
+  timestamp: string;
+  status: 'active' | 'resolved';
 }
 
 export interface Report {

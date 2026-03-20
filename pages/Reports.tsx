@@ -1,14 +1,14 @@
 import React, { useState } from 'react';
 import { useLifecare } from '../context/LifecareContext';
 import { format } from 'date-fns';
-import { FileText, Search, Filter } from 'lucide-react';
+import { Search, Filter } from 'lucide-react';
 import ptBR from 'date-fns/locale/pt-BR';
 
 export const Reports = () => {
   const { reports, currentUser } = useLifecare();
   const [searchTerm, setSearchTerm] = useState('');
 
-  // Filter logic based on role
+  // Lógica de filtro baseada no cargo e privacidade
   const filteredReports = reports.filter(r => {
     const matchesSearch = 
         r.clientName.toLowerCase().includes(searchTerm.toLowerCase()) ||
@@ -16,20 +16,18 @@ export const Reports = () => {
         r.generalState.toLowerCase().includes(searchTerm.toLowerCase());
     
     if (currentUser?.role === 'client') {
-        // Clients see reports about themselves (simulated by checking name match or generic 'Sr. João Santos')
-        return matchesSearch; // In real app, filter by client ID
+        return matchesSearch && r.clientName === currentUser.name; 
     } else if (currentUser?.role === 'caregiver') {
-        // Caregivers see reports they wrote OR reports for clients they are assigned to
-        return matchesSearch;
+        return matchesSearch && r.caregiverName === currentUser.name;
     }
-    return matchesSearch;
+    return matchesSearch; // Admin vê todos
   });
 
   return (
     <div className="space-y-6">
         <h1 className="text-2xl font-bold text-[#141C4D]">Histórico de Relatórios</h1>
 
-        {/* Search Bar */}
+        {/* Barra de Pesquisa */}
         <div className="bg-white p-4 rounded-xl shadow-sm flex items-center gap-3">
             <Search className="text-gray-400" />
             <input 

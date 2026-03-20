@@ -1,4 +1,3 @@
-
 import { ChecklistItem, User } from './types';
 
 export const ADMIN_EMAIL = 'marcelojr010102@gmail.com';
@@ -8,18 +7,18 @@ export const EMAILJS_SERVICE_ID = 'service_qppmufa';
 export const EMAILJS_TEMPLATE_ID = 'template_ekqk5ln'; 
 export const EMAILJS_PUBLIC_KEY = 'hi5wyhrtIYxwMTsXV'; 
 
-// --- CONFIGURAÇÃO FIREBASE (COLE SEUS DADOS AQUI) ---
+// --- CONFIGURAÇÃO FIREBASE ---
 export const FIREBASE_CONFIG = {
-  apiKey: "SUA_API_KEY_AQUI",
-  authDomain: "seu-projeto.firebaseapp.com",
-  projectId: "seu-projeto",
-  storageBucket: "seu-projeto.appspot.com",
-  messagingSenderId: "123456789",
-  appId: "1:123456789:web:abcdef"
+  apiKey: import.meta.env.VITE_FIREBASE_API_KEY,
+  authDomain: import.meta.env.VITE_FIREBASE_AUTH_DOMAIN,
+  projectId: import.meta.env.VITE_FIREBASE_PROJECT_ID,
+  storageBucket: import.meta.env.VITE_FIREBASE_STORAGE_BUCKET,
+  messagingSenderId: import.meta.env.VITE_FIREBASE_MESSAGING_SENDER_ID,
+  appId: import.meta.env.VITE_FIREBASE_APP_ID,
+  measurementId: import.meta.env.VITE_FIREBASE_MEASUREMENT_ID
 };
 
 // --- CONFIGURAÇÃO GOOGLE DRIVE / SCRIPT ---
-// Added missing constants to fix module export errors in googleDriveService.ts
 export const GOOGLE_SCRIPT_URL = '';
 export const DRIVE_FOLDER_ID = '';
 

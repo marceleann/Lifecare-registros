@@ -3,7 +3,7 @@ import { useLifecare } from '../context/LifecareContext';
 import { Button } from '../components/Button';
 import { format, isSameDay, endOfWeek, isWithinInterval } from 'date-fns';
 import ptBR from 'date-fns/locale/pt-BR';
-import { ClipboardList, Megaphone, Calendar as CalendarIcon, MapPin, Clock } from 'lucide-react';
+import { ClipboardList, Megaphone, Calendar as CalendarIcon, MapPin, Clock, HeartPulse, FileText, ListChecks, Plus, Trash2, Home } from 'lucide-react';
 
 // Helper for startOfWeek (Monday start)
 const getStartOfWeek = (date: Date) => {
@@ -16,8 +16,16 @@ const getStartOfWeek = (date: Date) => {
 };
 
 export const ClientDashboard = () => {
-  const { currentUser, shifts, reports, forms, submitFormResponse, announcements } = useLifecare();
+  const { currentUser, shifts, reports, forms, submitFormResponse, announcements, updateProntuario, updateClientChecklist } = useLifecare();
+  const [activeTab, setActiveTab] = useState<'overview' | 'checklist' | 'prontuario'>('overview');
   const [responseForm, setResponseForm] = useState<{ [key: string]: string }>({});
+  const [prontuarioText, setProntuarioText] = useState(currentUser?.prontuario || '');
+  const [showHistory, setShowHistory] = useState(false);
+  const [newChecklistItem, setNewChecklistItem] = useState('');
+  const [selectedDays, setSelectedDays] = useState<number[]>([]);
+  const [checklistType, setChecklistType] = useState<'recurrent' | 'specific'>('recurrent');
+  const [specificDate, setSpecificDate] = useState('');
+  const [specificTime, setSpecificTime] = useState('');
 
   const todayShift = shifts.find(s => isSameDay(new Date(s.startScheduled), new Date()));
   
@@ -43,12 +51,90 @@ export const ClientDashboard = () => {
     }
   };
 
+  const handleSaveProntuario = () => {
+      if (prontuarioText !== currentUser?.prontuario) {
+          updateProntuario(currentUser!.id, prontuarioText);
+      }
+  };
+
+  const handleAddChecklist = () => {
+      if (!newChecklistItem.trim() || !currentUser) return;
+      
+      if (checklistType === 'specific' && !specificDate) {
+          alert("Por favor, selecione uma data para o evento específico.");
+          return;
+      }
+
+      const currentList = currentUser.customChecklist || [];
+      const finalLabel = (checklistType === 'specific' && specificTime) 
+          ? `${newChecklistItem} (às ${specificTime})` 
+          : newChecklistItem;
+
+      const newItem: any = {
+          id: Math.random().toString(36).substr(2, 9),
+          label: finalLabel,
+          category: 'other',
+          completed: false,
+          required: true
+      };
+
+      if (checklistType === 'recurrent') {
+          newItem.daysOfWeek = selectedDays;
+      } else {
+          newItem.specificDate = specificDate;
+          newItem.time = specificTime;
+      }
+
+      updateClientChecklist(currentUser.id, [...currentList, newItem]);
+      setNewChecklistItem('');
+      setSelectedDays([]);
+      setSpecificDate('');
+      setSpecificTime('');
+  };
+
+  const toggleDay = (dayIndex: number) => {
+      setSelectedDays(prev => 
+          prev.includes(dayIndex) ? prev.filter(d => d !== dayIndex) : [...prev, dayIndex]
+      );
+  };
+
+  const handleRemoveChecklist = (id: string) => {
+      if (!currentUser) return;
+      const currentList = currentUser.customChecklist || [];
+      updateClientChecklist(currentUser.id, currentList.filter(i => i.id !== id));
+  };
+
   return (
     <div className="space-y-6">
-      <header className="bg-white p-6 rounded-3xl shadow-sm">
-        <h1 className="text-2xl font-bold text-[#141C4D]">Olá, {currentUser?.name} 👋</h1>
-        <p className="text-gray-500">Acompanhe seus cuidados de hoje.</p>
+      <header className="bg-white p-6 rounded-3xl shadow-sm flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+        <div>
+            <h1 className="text-2xl font-bold text-[#141C4D]">Olá, {currentUser?.name} 👋</h1>
+            <p className="text-gray-500">Acompanhe seus cuidados de hoje.</p>
+        </div>
+        <div className="flex flex-wrap bg-gray-100 p-1 rounded-lg gap-1">
+            <button 
+                onClick={() => setActiveTab('overview')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center ${activeTab === 'overview' ? 'bg-[#141C4D] text-white shadow' : 'text-gray-600 hover:bg-gray-200'}`}
+            >
+                <Home size={16} className="mr-2" /> Início
+            </button>
+            <button 
+                onClick={() => setActiveTab('checklist')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center ${activeTab === 'checklist' ? 'bg-[#141C4D] text-white shadow' : 'text-gray-600 hover:bg-gray-200'}`}
+            >
+                <ListChecks size={16} className="mr-2" /> Tarefas / Rotinas
+            </button>
+            <button 
+                onClick={() => setActiveTab('prontuario')}
+                className={`px-4 py-2 rounded-md text-sm font-medium transition-all flex items-center ${activeTab === 'prontuario' ? 'bg-[#141C4D] text-white shadow' : 'text-gray-600 hover:bg-gray-200'}`}
+            >
+                <FileText size={16} className="mr-2" /> Quadro de Saúde
+            </button>
+        </div>
       </header>
+
+      {activeTab === 'overview' && (
+      <>
 
       {/* Announcements */}
       {visibleAnnouncements.length > 0 && (
@@ -142,39 +228,171 @@ export const ClientDashboard = () => {
           )}
         </div>
       </div>
+      </>
+      )}
 
-      {/* Weekly Summary */}
-      <div className="bg-white p-6 rounded-3xl shadow-sm">
-        <h3 className="text-xl font-bold text-[#141C4D] mb-4">Resumo da Semana</h3>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead>
-              <tr className="text-left text-sm text-gray-500 border-b border-gray-100">
-                <th className="pb-3 font-medium">Data</th>
-                <th className="pb-3 font-medium">Cuidador</th>
-                <th className="pb-3 font-medium">Estado Geral</th>
-              </tr>
-            </thead>
-            <tbody>
-              {weeklyReports.length === 0 ? (
-                <tr>
-                  <td colSpan={3} className="py-4 text-center text-gray-400 text-sm">Nenhum relatório nesta semana.</td>
-                </tr>
-              ) : (
-                weeklyReports.map(report => (
-                  <tr key={report.id} className="border-b border-gray-50 last:border-0 hover:bg-gray-50 transition-colors">
-                    <td className="py-3 text-sm font-semibold text-[#141C4D]">
-                      {format(new Date(report.date), "dd/MM (EEE)", { locale: ptBR })}
-                    </td>
-                    <td className="py-3 text-sm text-gray-600">{report.caregiverName}</td>
-                    <td className="py-3 text-sm text-gray-600 truncate max-w-xs">{report.generalState}</td>
-                  </tr>
-                ))
-              )}
-            </tbody>
-          </table>
-        </div>
+      {activeTab === 'checklist' && (
+          <div className="bg-white p-6 rounded-3xl shadow-sm border-l-4 border-[#13808E]">
+              <h3 className="text-xl font-bold text-[#141C4D] flex items-center mb-2">
+                 <ListChecks className="mr-2 text-[#13808E]" /> Rotinas do Cuidado (Checklist)
+              </h3>
+              <p className="text-sm text-gray-500 mb-6 max-w-2xl">
+                 Adicione nas caixas de seleção (check) quais são as tarefas certinhas que o cuidador deve seguir durante o plantão. Você pode optar por tarefas que se repetem todos os dias ou em dias específicos.
+              </p>
+
+              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 mb-8 space-y-4">
+                 
+                 <div className="flex gap-4 border-b border-gray-200 pb-4">
+                     <label className="flex items-center gap-2 cursor-pointer">
+                         <input type="radio" checked={checklistType === 'recurrent'} onChange={() => setChecklistType('recurrent')} className="text-[#13808E] focus:ring-[#13808E]" />
+                         <span className="text-sm font-bold text-gray-700">Rotina (Dias da Semana)</span>
+                     </label>
+                     <label className="flex items-center gap-2 cursor-pointer">
+                         <input type="radio" checked={checklistType === 'specific'} onChange={() => setChecklistType('specific')} className="text-[#13808E] focus:ring-[#13808E]" />
+                         <span className="text-sm font-bold text-gray-700">Evento Único (Data Específica)</span>
+                     </label>
+                 </div>
+
+                 <div className="flex flex-col md:flex-row gap-2">
+                     <input 
+                         type="text" 
+                         className="flex-1 border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-[#13808E]"
+                         placeholder={checklistType === 'specific' ? "Ex: Consulta no Neurologista..." : "Ex: Dar banho completo, Medicar Losartana 50mg..."}
+                         value={newChecklistItem}
+                         onChange={e => setNewChecklistItem(e.target.value)}
+                         onKeyDown={e => e.key === 'Enter' && handleAddChecklist()}
+                     />
+                     {checklistType === 'specific' && (
+                         <div className="flex gap-2">
+                             <input type="date" className="border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-[#13808E]" value={specificDate} onChange={e => setSpecificDate(e.target.value)} />
+                             <input type="time" className="border border-gray-200 rounded-xl px-4 py-3 outline-none focus:border-[#13808E]" value={specificTime} onChange={e => setSpecificTime(e.target.value)} />
+                         </div>
+                     )}
+                 </div>
+                 
+                 <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                     {checklistType === 'recurrent' ? (
+                         <div className="flex items-center gap-2">
+                             <span className="text-sm text-gray-500 font-medium mr-2">Aplicar em:</span>
+                             {['D', 'S', 'T', 'Q', 'Q', 'S', 'S'].map((dayChar, idx) => (
+                                 <button 
+                                     key={idx}
+                                     onClick={() => toggleDay(idx)}
+                                     className={`w-8 h-8 rounded-full text-xs font-bold transition-colors flex items-center justify-center ${
+                                         selectedDays.includes(idx) ? 'bg-[#13808E] text-white shadow-md' : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
+                                     }`}
+                                     title="Clique para marcar dia específico. Se nenhum estiver marcado, vale para Todos os Dias."
+                                 >
+                                     {dayChar}
+                                 </button>
+                             ))}
+                         </div>
+                     ) : (
+                         <div className="text-sm text-gray-500 italic">
+                             Esta tarefa aparecerá na escala do cuidador somente na data selecionada acima.
+                         </div>
+                     )}
+                     <Button onClick={handleAddChecklist} className="bg-[#13808E] hover:bg-[#0f6b78] flex items-center gap-2 whitespace-nowrap">
+                         <Plus size={20} /> {checklistType === 'specific' ? 'Agendar Evento' : 'Adicionar Rotina'}
+                     </Button>
+                 </div>
+              </div>
+
+              <div className="space-y-3">
+                  {(!currentUser?.customChecklist || currentUser.customChecklist.length === 0) ? (
+                      <div className="text-center p-8 bg-gray-50 rounded-xl text-gray-500 border border-dashed border-gray-300">
+                          Nenhuma tarefa configurada. Adicione tarefas acima para montar o plano de cuidado da sua família.
+                      </div>
+                  ) : (
+                      currentUser.customChecklist.map(item => (
+                          <div key={item.id} className="flex justify-between items-center bg-gray-50 p-4 rounded-xl border border-gray-200 group">
+                              <div className="flex flex-col md:flex-row md:items-center gap-3">
+                                  <div className="flex items-center gap-3">
+                                      <div className="w-5 h-5 rounded border-2 border-[#13808E]/30 bg-white"></div>
+                                      <span className="font-medium text-gray-800">{item.label}</span>
+                                  </div>
+                                  {item.specificDate ? (
+                                      <div className="ml-8 md:ml-4 text-[11px] font-bold bg-orange-100 text-orange-700 px-2 py-0.5 rounded-full flex items-center">
+                                          <CalendarIcon size={12} className="mr-1" />
+                                          {format(new Date(item.specificDate + 'T00:00:00'), 'dd/MM/yyyy')}
+                                      </div>
+                                  ) : (
+                                      item.daysOfWeek && item.daysOfWeek.length > 0 && (
+                                         <div className="flex gap-1 ml-8 md:ml-4">
+                                             {item.daysOfWeek.map(d => (
+                                                 <span key={d} className="text-[10px] font-bold bg-[#13808E]/10 text-[#13808E] px-2 py-0.5 rounded-full">
+                                                     {['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'][d]}
+                                                 </span>
+                                             ))}
+                                         </div>
+                                      )
+                                  )}
+                              </div>
+                              <button 
+                                  onClick={() => handleRemoveChecklist(item.id)}
+                                  className="text-gray-400 hover:text-red-500 p-2 rounded-lg hover:bg-red-50 transition-colors opacity-0 group-hover:opacity-100"
+                                  title="Remover Tarefa"
+                              >
+                                  <Trash2 size={20} />
+                              </button>
+                          </div>
+                      ))
+                  )}
+              </div>
+          </div>
+      )}
+
+      {activeTab === 'prontuario' && (
+      /* PRONTUÁRIO CLÍNICO (Acesso Família/Cliente) */
+      <div className="bg-white p-6 rounded-3xl shadow-sm border-l-4 border-[#13808E]">
+          <div className="flex flex-col md:flex-row md:justify-between md:items-start gap-4 mb-4">
+              <div>
+                  <h3 className="text-xl font-bold text-[#141C4D] flex items-center">
+                    <HeartPulse className="mr-2 text-[#13808E]" /> Prontuário Compartilhado
+                  </h3>
+                  <p className="text-sm text-gray-500 mt-1 max-w-2xl">
+                      <strong>INSTRUÇÕES:</strong> Utilize este espaço para registrar e atualizar livremente o quadro de saúde, alergias, medicações de rotina e observações importantes. Este prontuário é exibido no celular do cuidador antes do plantão iniciar. 
+                  </p>
+              </div>
+              <Button variant="secondary" className="text-xs whitespace-nowrap" onClick={() => setShowHistory(!showHistory)}>
+                  {showHistory ? "Ocultar Histórico" : "Ver Versões Anteriores"}
+              </Button>
+          </div>
+
+          {!showHistory ? (
+              <div className="space-y-4">
+                  <textarea 
+                      className="w-full border rounded-xl p-4 bg-gray-50 min-h-[150px] outline-none focus:border-[#13808E] resize-y"
+                      placeholder="Ex: Alérgico a Dipirona. Diagnóstico de Alzheimer grau leve. Medicações diárias: Losartana 50mg (08:00)..."
+                      value={prontuarioText}
+                      onChange={(e) => setProntuarioText(e.target.value)}
+                  ></textarea>
+                  <div className="flex justify-end">
+                      <Button onClick={handleSaveProntuario} disabled={prontuarioText === currentUser?.prontuario}>Salvar Novo Prontuário</Button>
+                  </div>
+              </div>
+          ) : (
+              <div className="bg-gray-50 p-4 rounded-xl border border-gray-200 mt-4 max-h-[300px] overflow-y-auto">
+                  <h4 className="font-bold text-[#141C4D] mb-4">Histórico de Alterações</h4>
+                  {(!currentUser?.prontuarioHistory || currentUser.prontuarioHistory.length === 0) ? (
+                      <p className="text-gray-500 text-sm">Nenhuma alteração anterior registrada no sistema.</p>
+                  ) : (
+                      <div className="space-y-4">
+                          {[...(currentUser.prontuarioHistory || [])].reverse().map((h, idx) => (
+                              <div key={idx} className="bg-white p-4 rounded-lg shadow-sm border border-gray-100">
+                                  <div className="flex justify-between text-xs text-gray-400 mb-2 font-semibold">
+                                      <span>Data: {format(new Date(h.date), "dd/MM/yyyy 'às' HH:mm")}</span>
+                                      <span>Por: {h.author}</span>
+                                  </div>
+                                  <p className="text-sm text-gray-700 whitespace-pre-wrap">{h.text}</p>
+                              </div>
+                          ))}
+                      </div>
+                  )}
+              </div>
+          )}
       </div>
+      )}
     </div>
   );
 };

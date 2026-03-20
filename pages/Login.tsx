@@ -1,36 +1,45 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useLifecare } from '../context/LifecareContext';
 import { useNavigate } from 'react-router-dom';
 import { Button } from '../components/Button';
-import { User, ShieldCheck, Activity, ArrowLeft, Mail, CheckCircle } from 'lucide-react';
+import { ArrowLeft, CheckCircle } from 'lucide-react';
 
 export const Login = () => {
-  const { login, resetPassword } = useLifecare();
+  // 1. Adicionamos o currentUser aqui para o Login saber quando o utilizador está pronto
+  const { login, resetPassword, currentUser, isLoading } = useLifecare();
   const navigate = useNavigate();
   const [view, setView] = useState<'login' | 'forgot'>('login');
   
-  const [selectedRole, setSelectedRole] = useState<'client' | 'caregiver' | 'admin'>('caregiver');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [resetEmail, setResetEmail] = useState('');
   const [isResetting, setIsResetting] = useState(false);
   const [resetSent, setResetSent] = useState(false);
+  const [error, setError] = useState(''); 
 
-  const handleLogin = async (e: React.FormEvent) => { // <--- Adicione 'async' aqui
-    e.preventDefault();
-    const success = await login(email, selectedRole, password); // <--- Adicione 'await' aqui também!
-    if (success) { // <-- Agora 'success' já é o valor resolvido da Promise
-        navigate('/dashboard');
+  // 2. O truque da paciência: Se o currentUser existir (carregou do banco), vai para o dashboard
+  useEffect(() => {
+    if (currentUser) {
+      navigate('/dashboard');
     }
-};
+  }, [currentUser, navigate]);
+
+  const handleLogin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setError('');
+    
+    // Agora só verificamos se deu erro. O sucesso é tratado pelo useEffect acima!
+    const success = await login(email, '', password); 
+    
+    if (!success) {
+        setError('Falha ao entrar. Verifique email e senha.');
+    }
+  };
 
   const handleResetPassword = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsResetting(true);
-    
-    // Chama o serviço real de EmailJS
     const success = await resetPassword(resetEmail);
-    
     setIsResetting(false);
     if (success) {
         setResetSent(true);
@@ -41,10 +50,9 @@ export const Login = () => {
     <div className="min-h-screen flex items-center justify-center p-4 bg-gradient-to-br from-[#141C4D] to-[#13808E]">
       <div className="bg-white rounded-3xl shadow-2xl overflow-hidden max-w-4xl w-full flex flex-col md:flex-row">
         
-        {/* Left Side: Brand */}
+        {/* Lado Esquerdo: Marca */}
         <div className="md:w-1/2 p-10 bg-[#141C4D] text-white flex flex-col justify-center items-center text-center relative overflow-hidden">
           <div className="absolute inset-0 bg-[url('https://images.unsplash.com/photo-1576765608535-5f04d1e3f289?ixlib=rb-1.2.1&auto=format&fit=crop&w=1350&q=80')] opacity-10 bg-cover bg-center" />
-          
           <div className="relative z-10">
              <h1 className="text-4xl font-bold mb-2 tracking-tight">LIFECARE</h1>
              <p className="text-[#99FFB6] tracking-widest text-sm uppercase mb-8">Serviços em Saúde</p>
@@ -52,37 +60,19 @@ export const Login = () => {
           </div>
         </div>
 
-        {/* Right Side: Form */}
+        {/* Lado Direito: Formulário */}
         <div className="md:w-1/2 p-10 flex flex-col justify-center bg-white relative">
           
           {view === 'login' ? (
             <>
-              <h2 className="text-2xl font-bold text-[#141C4D] mb-6">Bem-vindo(a)</h2>
-              
-              {/* Role Selectors */}
-              <div className="grid grid-cols-3 gap-2 mb-8">
-                <button
-                  onClick={() => setSelectedRole('client')}
-                  className={`p-3 rounded-xl flex flex-col items-center justify-center transition-all ${selectedRole === 'client' ? 'bg-[#13808E] text-white shadow-lg' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
-                >
-                  <User size={24} className="mb-1" />
-                  <span className="text-xs font-medium">Cliente</span>
-                </button>
-                <button
-                  onClick={() => setSelectedRole('caregiver')}
-                  className={`p-3 rounded-xl flex flex-col items-center justify-center transition-all ${selectedRole === 'caregiver' ? 'bg-[#13808E] text-white shadow-lg' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
-                >
-                  <Activity size={24} className="mb-1" />
-                  <span className="text-xs font-medium">Cuidador</span>
-                </button>
-                <button
-                  onClick={() => setSelectedRole('admin')}
-                  className={`p-3 rounded-xl flex flex-col items-center justify-center transition-all ${selectedRole === 'admin' ? 'bg-[#13808E] text-white shadow-lg' : 'bg-gray-100 text-gray-500 hover:bg-gray-200'}`}
-                >
-                  <ShieldCheck size={24} className="mb-1" />
-                  <span className="text-xs font-medium">Admin</span>
-                </button>
-              </div>
+              <h2 className="text-2xl font-bold text-[#141C4D] mb-2">Bem-vindo(a)</h2>
+              <p className="text-gray-500 mb-8">Insira suas credenciais para acessar.</p>
+
+              {error && (
+                <div className="bg-red-50 text-red-600 p-3 rounded-lg mb-4 text-sm text-center">
+                  {error}
+                </div>
+              )}
 
               <form onSubmit={handleLogin} className="space-y-6">
                 <div>
@@ -105,6 +95,7 @@ export const Login = () => {
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-gray-900 focus:ring-2 focus:ring-[#13808E] focus:border-transparent outline-none transition-all"
                     placeholder="••••••••"
+                    required
                   />
                   <div className="flex justify-end mt-2">
                     <button 
@@ -117,8 +108,8 @@ export const Login = () => {
                   </div>
                 </div>
 
-                <Button type="submit" fullWidth>
-                  Entrar
+                <Button type="submit" fullWidth disabled={isLoading}>
+                  {isLoading ? 'Processando...' : 'Entrar no Sistema'}
                 </Button>
               </form>
             </>
@@ -138,8 +129,7 @@ export const Login = () => {
                     </div>
                     <h2 className="text-2xl font-bold text-[#141C4D] mb-2">Email Enviado!</h2>
                     <p className="text-gray-600 mb-8 text-sm">
-                        Enviamos um link de redefinição para <strong>{resetEmail}</strong>.<br/>
-                        Verifique sua caixa de entrada e spam.
+                        Verifique sua caixa de entrada.
                     </p>
                     <Button fullWidth onClick={() => { setView('login'); setResetSent(false); }}>
                       Voltar para o Login
@@ -148,8 +138,6 @@ export const Login = () => {
               ) : (
                   <>
                     <h2 className="text-2xl font-bold text-[#141C4D] mb-2">Recuperar Senha</h2>
-                    <p className="text-gray-500 text-sm mb-6">Digite seu email para receber um link de redefinição de senha real.</p>
-                    
                     <form onSubmit={handleResetPassword} className="space-y-6">
                         <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Email cadastrado</label>
@@ -158,22 +146,18 @@ export const Login = () => {
                             value={resetEmail}
                             onChange={(e) => setResetEmail(e.target.value)}
                             className="w-full px-4 py-3 rounded-xl border border-gray-300 bg-white text-gray-900 focus:ring-2 focus:ring-[#13808E] focus:border-transparent outline-none transition-all"
-                            placeholder="exemplo@email.com"
                             required
                         />
                         </div>
-
                         <Button type="submit" fullWidth disabled={isResetting}>
-                        {isResetting ? 'Enviando...' : 'Enviar Link de Recuperação'}
+                        {isResetting ? 'Enviando...' : 'Enviar Link'}
                         </Button>
                     </form>
                   </>
               )}
             </>
           )}
-
         </div>
-
       </div>
     </div>
   );

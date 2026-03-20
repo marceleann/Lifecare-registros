@@ -1,14 +1,123 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useLifecare } from '../context/LifecareContext';
 import { LogOut, Menu, X, User as UserIcon, Calendar, Activity, ClipboardList, LayoutDashboard, RefreshCw } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 // Added optional children typing to handle cases where consumers might trigger strict property checks
 export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
-  const { currentUser, logout, notifications, refreshData, isLoading } = useLifecare();
+  const { currentUser, logout, notifications, refreshData, isLoading, updateAvatar, shifts, emergencies } = useLifecare();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const navigate = useNavigate();
+
+  // --- AUDIO ALARMS LOGIC (Global for Admin via Web Audio API) ---
+  const isAdmin = currentUser?.role === 'admin';
+  const sirenIntervalRef = useRef<NodeJS.Timeout | null>(null);
+  const notifiedLateShiftsRef = useRef<Set<string>>(new Set());
+  const [now, setNow] = useState(Date.now());
+  const [unacknowledgedLates, setUnacknowledgedLates] = useState(false);
+
+  // Web Audio Synth Functions
+  const playSirenSweep = () => {
+      try {
+          const AudioContext = window.AudioContext || (window as any).webkitAudioContext;
+          const ctx = new AudioContext();
+          const osc = ctx.createOscillator();
+          const panner = ctx.createStereoPanner ? ctx.createStereoPanner() : null;
+          const gain = ctx.createGain();
+          
+          osc.type = 'square';
+          osc.frequency.setValueAtTime(600, ctx.currentTime);
+          osc.frequency.linearRampToValueAtTime(1200, ctx.currentTime + 0.8);
+          osc.frequency.linearRampToValueAtTime(600, ctx.currentTime + 1.6);
+          
+          gain.gain.setValueAtTime(0, ctx.currentTime);
+          gain.gain.linearRampToValueAtTime(0.1, ctx.currentTime + 0.1); // Volume control
+          gain.gain.setValueAtTime(0.1, ctx.currentTime + 1.5);
+          gain.gain.linearRampToValueAtTime(0, ctx.currentTime + 1.6);
+          
+          osc.connect(gain);
+          if (panner) {
+             gain.connect(panner);
+             panner.connect(ctx.destination);
+          } else {
+             gain.connect(ctx.destination);
+          }
+          
+          osc.start();
+          osc.stop(ctx.currentTime + 1.6);
+      } catch (e) {
+          console.warn("Audio Context blocked:", e);
+      }
+  };
+
+  useEffect(() => {
+     if (!isAdmin) return;
+     const interval = setInterval(() => setNow(Date.now()), 60000);
+     return () => clearInterval(interval);
+  }, [isAdmin]);
+
+  // Late detection
+  // We use shifts directly since emergencies are deprecated
+  const todayShifts = (shifts || []).filter(s => s.startScheduled && new Date(s.startScheduled).toDateString() === new Date().toDateString());
+  const lateShifts = todayShifts.filter(s => {
+      if (s.status === 'completed' || s.checkIn || s.acknowledgedLate) return false;
+      const scheduledTime = new Date(s.startScheduled).getTime();
+      return (now - scheduledTime) > 15 * 60 * 1000;
+  });
+
+  useEffect(() => {
+      if (!isAdmin) return;
+      
+      // Request Web Push Notification Permission
+      if ('Notification' in window && Notification.permission === 'default') {
+          Notification.requestPermission();
+      }
+
+      let hasNew = false;
+      lateShifts.forEach(shift => {
+          if (!notifiedLateShiftsRef.current.has(shift.id)) {
+              hasNew = true;
+          }
+      });
+      
+      if (hasNew && !unacknowledgedLates) {
+          // Trigger system push notification if allowed
+          if ('Notification' in window && Notification.permission === 'granted') {
+              new Notification("🚨 ALERTA LIFECARE: Atraso Grave", {
+                  body: "Um ou mais cuidadores ultrapassaram a tolerância de 15 minutos do plantão. Verifique o painel imediatamente.",
+                  icon: "/vite.svg"
+              });
+          }
+      }
+      
+      setUnacknowledgedLates(hasNew);
+  }, [lateShifts, isAdmin]);
+
+  useEffect(() => {
+      if (!isAdmin) return;
+      
+      if (unacknowledgedLates) {
+          if (!sirenIntervalRef.current) {
+              playSirenSweep();
+              sirenIntervalRef.current = setInterval(playSirenSweep, 1600);
+          }
+      } else {
+          if (sirenIntervalRef.current) {
+              clearInterval(sirenIntervalRef.current);
+              sirenIntervalRef.current = null;
+          }
+      }
+      
+      return () => {
+          if (sirenIntervalRef.current) clearInterval(sirenIntervalRef.current);
+      }
+  }, [unacknowledgedLates, isAdmin]);
+
+  const muteLateAlarms = () => {
+      lateShifts.forEach(s => notifiedLateShiftsRef.current.add(s.id));
+      setUnacknowledgedLates(false);
+  };
 
   const handleLogout = () => {
     logout();
@@ -18,6 +127,38 @@ export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) =
   const handleRefresh = async () => {
       await refreshData();
       setIsSidebarOpen(false); // Close mobile menu if open
+  };
+
+  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+      const file = e.target.files?.[0];
+      if (!file) return;
+      
+      const reader = new FileReader();
+      reader.onload = (event) => {
+          const img = new Image();
+          img.onload = () => {
+              const canvas = document.createElement('canvas');
+              const size = 150;
+              canvas.width = size;
+              canvas.height = size;
+              const ctx = canvas.getContext('2d');
+              if (!ctx) return;
+              
+              // Draw image centered and scaled (cover logic)
+              const scale = Math.max(size / img.width, size / img.height);
+              const x = (size / scale - img.width) / 2;
+              const y = (size / scale - img.height) / 2;
+              
+              ctx.fillStyle = '#FFFFFF';
+              ctx.fillRect(0, 0, size, size);
+              ctx.drawImage(img, 0, 0, img.width, img.height, x * scale, y * scale, img.width * scale, img.height * scale);
+              
+              const base64 = canvas.toDataURL('image/jpeg', 0.8);
+              if (updateAvatar) updateAvatar(base64);
+          };
+          img.src = event.target?.result as string;
+      };
+      reader.readAsDataURL(file);
   };
 
   const NavItem = ({ icon: Icon, label, path }: { icon: any, label: string, path: string }) => (
@@ -31,7 +172,17 @@ export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) =
   );
 
   return (
-    <div className="min-h-screen bg-[#F5F7FA] flex flex-col md:flex-row">
+    <div className="min-h-screen bg-[#F5F7FA] flex flex-col md:flex-row relative">
+      {unacknowledgedLates && (
+         <div className="bg-[#141C4D] text-white p-4 flex flex-col sm:flex-row justify-between items-center fixed top-0 left-0 right-0 z-[100] shadow-xl animate-pulse border-b-4 border-[#13808E]">
+             <span className="font-bold flex items-center mb-2 sm:mb-0">
+                 🚨 ALERTA GERAL: Cuidadores com atraso prolongado! Vá ao Painel de Monitoramento.
+             </span>
+             <button onClick={muteLateAlarms} className="bg-[#13808E] text-white px-6 py-2 rounded-xl font-black shadow-lg hover:bg-[#0f606b] hover:scale-105 transition-all whitespace-nowrap">
+                 SILENCIAR SIRENE
+             </button>
+         </div>
+      )}
       {/* Notifications Toast */}
       <div className="fixed top-4 right-4 z-50 flex flex-col gap-2">
         {notifications.map((msg, i) => (
@@ -63,15 +214,23 @@ export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) =
         </div>
 
         <div className="p-6">
-          <div className="flex items-center space-x-3 mb-8 bg-[#F5F7FA] p-3 rounded-lg">
-            <img 
-              src={currentUser?.avatar || "https://ui-avatars.com/api/?name=User"} 
-              alt="Avatar" 
-              className="w-10 h-10 rounded-full border-2 border-[#13808E]" 
-            />
-            <div>
-              <p className="text-sm font-bold text-[#141C4D]">{currentUser?.name}</p>
-              <p className="text-xs text-gray-500 capitalize">{currentUser?.role === 'caregiver' ? 'Cuidador(a)' : currentUser?.role}</p>
+          <div className="flex items-center space-x-3 mb-8 bg-[#F5F7FA] p-3 rounded-xl border border-gray-100 group relative">
+            <label className="relative cursor-pointer block flex-shrink-0">
+                <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
+                <div className="relative w-12 h-12 rounded-full border-2 border-[#13808E] overflow-hidden bg-white shadow-sm">
+                    <img 
+                      src={currentUser?.avatar || `https://ui-avatars.com/api/?name=${currentUser?.name || 'User'}&background=random`} 
+                      alt="Avatar" 
+                      className="w-full h-full object-cover" 
+                    />
+                    <div className="absolute inset-0 bg-black bg-opacity-60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <span className="text-[9px] text-white font-bold text-center leading-tight">MUDAR<br/>FOTO</span>
+                    </div>
+                </div>
+            </label>
+            <div className="overflow-hidden">
+              <p className="text-sm font-bold text-[#141C4D] truncate" title={currentUser?.name}>{currentUser?.name}</p>
+              <p className="text-xs text-gray-500 capitalize truncate">{currentUser?.role === 'caregiver' ? 'Cuidador(a)' : currentUser?.role}</p>
             </div>
           </div>
 

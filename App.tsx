@@ -88,7 +88,7 @@ const AppRoutes = () => {
       <Route 
         path="/schedule" 
         element={
-          <ProtectedRoute allowedRoles={['caregiver', 'admin']}>
+          <ProtectedRoute allowedRoles={['caregiver', 'admin', 'client']}>
             <Schedule />
           </ProtectedRoute>
         } 

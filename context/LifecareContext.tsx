@@ -1,9 +1,7 @@
-
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { User, Shift, Report, ChecklistItem, Form, Announcement } from '../types';
+import { User, Shift, Report, ChecklistItem, Form, Announcement, Emergency } from '../types';
 import { BASE_CHECKLIST } from '../constants';
 import { sendEmail, generateCheckInEmail, generateCheckOutEmail, generateReportEmail } from '../services/emailService';
-// Importando TUDO do nosso serviço local para manter consistência
 import { 
   auth, 
   db, 
@@ -15,7 +13,7 @@ import {
   signOut,
   sendPasswordResetEmail
 } from '../services/firebaseService';
-import { collection, onSnapshot, doc, deleteDoc } from 'firebase/firestore';
+import { collection, onSnapshot, doc, deleteDoc, getDocs, query, where, addDoc } from 'firebase/firestore';
 import { format } from 'date-fns';
 import { Loader2 } from 'lucide-react';
 
@@ -26,19 +24,24 @@ interface LifecareContextType {
   reports: Report[];
   forms: Form[];
   announcements: Announcement[];
+  emergencies: Emergency[];
   isLoading: boolean;
   login: (email: string, role: string, password?: string) => Promise<boolean>;
   logout: () => void;
   resetPassword: (email: string) => Promise<boolean>;
   updateUserPassword: (email: string, newPassword: string) => void; 
   checkIn: (shiftId: string) => Promise<void>;
-  checkOut: (shiftId: string) => Promise<void>;
+  checkOut: (shiftId: string, handoverNote?: string) => Promise<void>;
   toggleChecklistItem: (shiftId: string, itemId: string) => void;
   submitReport: (report: Omit<Report, 'id' | 'caregiverName' | 'clientName' | 'date'>) => Promise<void>;
   createForm: (form: Omit<Form, 'id' | 'createdAt' | 'responses'>) => void;
   submitFormResponse: (formId: string, response: string) => void;
   addUser: (user: Omit<User, 'id' | 'avatar'>) => void;
   updateClientChecklist: (userId: string, checklist: ChecklistItem[]) => void;
+  updateAvatar: (base64String: string) => Promise<void>;
+  updateProntuario: (userId: string, newText: string) => Promise<void>;
+  triggerSOS: (clientId: string, clientName: string) => Promise<void>;
+  resolveEmergency: (emergencyId: string) => Promise<void>;
   addShift: (shiftData: { caregiverId: string; clientId: string; start: string; end: string }) => void;
   deleteShift: (shiftId: string) => void;
   addAnnouncement: (announcement: Omit<Announcement, 'id' | 'date' | 'author'>) => void;
@@ -47,6 +50,7 @@ interface LifecareContextType {
   notifications: string[];
   resetSystemData: () => void;
   refreshData: () => Promise<void>;
+  acknowledgeLate: (shiftId: string) => Promise<void>;
 }
 
 const LifecareContext = createContext<LifecareContextType | undefined>(undefined);
@@ -58,16 +62,15 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
   const [reports, setReports] = useState<Report[]>([]);
   const [forms, setForms] = useState<Form[]>([]);
   const [announcements, setAnnouncements] = useState<Announcement[]>([]);
+  const [emergencies, setEmergencies] = useState<Emergency[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [notifications, setNotifications] = useState<string[]>([]);
 
   useEffect(() => {
-    // Timer de segurança de 2 segundos para não travar no loading
     const safetyTimer = setTimeout(() => {
       setIsLoading(false);
     }, 2000);
 
-    // Fix: Use any for firebaseUser callback parameter to bypass 'User' export issue in certain environments
     const unsubscribeAuth = onAuthStateChanged(auth, (firebaseUser: any) => {
       if (!firebaseUser) {
         setCurrentUser(null);
@@ -81,7 +84,7 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
       setUsers(usersData);
       
       if (auth.currentUser) {
-        const profile = usersData.find(u => u.email === auth.currentUser?.email);
+        const profile = usersData.find(u => u.email.trim().toLowerCase() === auth.currentUser?.email?.trim().toLowerCase());
         if (profile) setCurrentUser(profile);
       }
       setIsLoading(false);
@@ -99,6 +102,7 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
         const sorted = s.docs.map(d => ({id: d.id, ...d.data()})).sort((a: any, b: any) => new Date(b.date).getTime() - new Date(a.date).getTime());
         setAnnouncements(sorted as any);
     });
+    const unsubSOS = onSnapshot(collection(db, 'emergencies'), (s) => setEmergencies(s.docs.map(d => ({id: d.id, ...d.data()})) as any));
 
     return () => { 
       unsubscribeAuth(); 
@@ -107,6 +111,7 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
       unsubReports(); 
       unsubForms(); 
       unsubAnn();
+      unsubSOS();
       clearTimeout(safetyTimer);
     };
   }, []);
@@ -114,11 +119,48 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
   const login = async (email: string, role: string, password?: string) => {
     try {
       setIsLoading(true);
-      await signInWithEmailAndPassword(auth, email, password || '12345678');
+      if (!password) {
+        throw new Error("Senha é obrigatória");
+      }
+      
+      await signInWithEmailAndPassword(auth, email, password);
+      
+      const userEmailFormatado = email.trim().toLowerCase();
+      
+      // OPTIMIZATION: Check the already-synced users array instead of making a new getDocs network call
+      // which eliminates 50% of the login delay!
+      let profile = users.find(u => u.email.trim().toLowerCase() === userEmailFormatado);
+
+      if (!profile) {
+        console.log("Criando perfil no Firestore automaticamente...");
+        let assumedRole = 'client';
+        if (userEmailFormatado === 'marcelojr010102@gmail.com') assumedRole = 'admin';
+        else if (userEmailFormatado.includes('cuidador')) assumedRole = 'caregiver';
+
+        const newProfileData = {
+          name: userEmailFormatado.split('@')[0],
+          email: userEmailFormatado,
+          role: assumedRole,
+          avatar: `https://ui-avatars.com/api/?name=${userEmailFormatado.split('@')[0]}&background=random`
+        };
+
+        const docRef = await addDoc(collection(db, 'users'), newProfileData);
+        profile = { id: docRef.id, ...newProfileData } as User;
+      }
+      
+      setCurrentUser(profile); 
       return true;
     } catch (error: any) {
       console.error("Erro no Login:", error);
-      alert("Credenciais inválidas. Verifique seu email e senha.");
+      
+      let errorMessage = "Erro ao fazer login. Verifique suas credenciais.";
+      if (error.code === 'auth/invalid-credential' || error.code === 'auth/wrong-password' || error.code === 'auth/user-not-found') {
+        errorMessage = "Email ou senha incorretos.";
+      } else if (error.message === "Senha é obrigatória") {
+        errorMessage = "Por favor, digite sua senha.";
+      }
+      
+      alert(errorMessage);
       return false;
     } finally {
       setIsLoading(false);
@@ -142,16 +184,12 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
     const now = new Date().toISOString();
     await updateDocument('shifts', shiftId, { status: 'active', checkIn: now });
     addNotification("Check-in confirmado.");
-    const shift = shifts.find(s => s.id === shiftId);
-    if (shift && currentUser) sendEmail(generateCheckInEmail(currentUser.name, shift.clientName, format(new Date(now), "HH:mm")));
   };
 
-  const checkOut = async (shiftId: string) => {
+  const checkOut = async (shiftId: string, handoverNote: string = "") => {
     const now = new Date().toISOString();
-    await updateDocument('shifts', shiftId, { status: 'completed', checkOut: now });
-    addNotification("Plantão finalizado.");
-    const shift = shifts.find(s => s.id === shiftId);
-    if (shift && currentUser) sendEmail(generateCheckOutEmail(currentUser.name, shift.clientName, format(new Date(now), "HH:mm")));
+    await updateDocument('shifts', shiftId, { status: 'completed', checkOut: now, handoverNote });
+    addNotification(handoverNote ? "Plantão finalizado com passagem de plantão." : "Plantão finalizado.");
   };
 
   const toggleChecklistItem = async (shiftId: string, itemId: string) => {
@@ -159,6 +197,11 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
     if (!shift) return;
     const newChecklist = shift.checklist.map(i => i.id === itemId ? {...i, completed: !i.completed} : i);
     await updateDocument('shifts', shiftId, { checklist: newChecklist });
+  };
+
+  const acknowledgeLate = async (shiftId: string) => {
+    await updateDocument('shifts', shiftId, { acknowledgedLate: true });
+    addNotification("Atraso marcado como visto.");
   };
 
   const submitReport = async (reportData: any) => {
@@ -190,10 +233,63 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
     addNotification("Plano de cuidado atualizado.");
   };
 
+  const updateAvatar = async (base64String: string) => {
+    if (!currentUser) return;
+    await updateDocument('users', currentUser.id, { avatar: base64String });
+    addNotification("Foto de perfil atualizada com sucesso!");
+  };
+
+  const updateProntuario = async (userId: string, newText: string) => {
+      const client = users.find(u => u.id === userId);
+      if (!client || !currentUser) return;
+      
+      const newHistoryItem = {
+          date: new Date().toISOString(),
+          text: newText,
+          author: currentUser.name
+      };
+
+      const history = client.prontuarioHistory ? [...client.prontuarioHistory, newHistoryItem] : [newHistoryItem];
+      await updateDocument('users', userId, { prontuario: newText, prontuarioHistory: history });
+      addNotification("Prontuário salvo com sucesso!");
+  };
+
+  const triggerSOS = async (clientId: string, clientName: string) => {
+      if (!currentUser) return;
+      await addDocument('emergencies', {
+          caregiverId: currentUser.id,
+          caregiverName: currentUser.name,
+          clientId,
+          clientName,
+          status: 'active',
+          timestamp: new Date().toISOString()
+      });
+  };
+
+  const resolveEmergency = async (emergencyId: string) => {
+      await updateDocument('emergencies', emergencyId, { status: 'resolved' });
+  };
+
   const addShift = async (shiftData: any) => {
     const caregiver = users.find(u => u.id === shiftData.caregiverId);
     const client = users.find(u => u.id === shiftData.clientId);
     if (!caregiver || !client) return;
+
+    const shiftDateObj = new Date(shiftData.start);
+    const shiftDay = shiftDateObj.getDay();
+    const shiftDateStr = format(shiftDateObj, 'yyyy-MM-dd');
+    let shiftChecklist = BASE_CHECKLIST;
+    if (client.customChecklist && client.customChecklist.length > 0) {
+        shiftChecklist = client.customChecklist.filter(item => {
+            if (item.specificDate) {
+                return item.specificDate === shiftDateStr;
+            }
+            if (item.daysOfWeek && item.daysOfWeek.length > 0) {
+                return item.daysOfWeek.includes(shiftDay);
+            }
+            return true; // Aplica todo dia se não tiver specificDate nem daysOfWeek
+        });
+    }
 
     const newShift = {
       caregiverId: caregiver.id,
@@ -203,7 +299,7 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
       startScheduled: shiftData.start,
       endScheduled: shiftData.end,
       status: 'scheduled',
-      checklist: client.customChecklist || BASE_CHECKLIST
+      checklist: shiftChecklist
     };
     await addDocument('shifts', newShift);
     addNotification("Plantão agendado.");
@@ -255,9 +351,9 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
     setTimeout(() => setNotifications(prev => prev.slice(0, prev.length - 1)), 5000);
   };
 
-  const refreshData = async () => { /* Sync automático */ };
-  const resetSystemData = () => { /* Proteção */ };
-  const updateUserPassword = () => { /* Auth */ };
+  const refreshData = async () => { };
+  const resetSystemData = () => {  };
+  const updateUserPassword = () => {  };
 
   const exportToGoogleSheets = (data: any[], filename: string) => {
     if (!data.length) return;
@@ -284,24 +380,23 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
     document.body.removeChild(link);
   };
 
-  if (isLoading) {
-    return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#141C4D] text-white">
-        <Loader2 className="w-12 h-12 animate-spin text-[#99FFB6] mb-4" />
-        <h2 className="text-xl font-bold">Conectando ao servidor...</h2>
-      </div>
-    );
-  }
-
+  // Evita o "piscar" (flash) da tela de login durante os milissegundos do cold start do Firebase Auth
+  if (isLoading && !currentUser) return null;
+  
   return (
     <LifecareContext.Provider value={{
       currentUser, users, shifts, reports, forms, announcements, isLoading,
       login, logout, resetPassword, updateUserPassword,
       checkIn, checkOut, toggleChecklistItem, submitReport,
       createForm, submitFormResponse, addUser, updateClientChecklist,
+      updateAvatar, updateProntuario, triggerSOS, resolveEmergency,
       addShift, deleteShift, addAnnouncement,
-      exportToGoogleSheets, exportToGoogleDocs, notifications, resetSystemData, refreshData
-    }}>
+      exportToGoogleSheets,        exportToGoogleDocs,
+        notifications,
+        resetSystemData,
+        refreshData,
+        acknowledgeLate, emergencies
+      }}>
       {children}
     </LifecareContext.Provider>
   );

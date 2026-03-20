@@ -3,12 +3,15 @@ import { useLifecare } from '../context/LifecareContext';
 import { Button } from '../components/Button';
 import { format, isSameDay } from 'date-fns';
 import ptBR from 'date-fns/locale/pt-BR';
-import { Clock, MapPin, CheckSquare, Square, Send, AlertTriangle, FileText, Clipboard, Megaphone } from 'lucide-react';
+import { Clock, MapPin, CheckSquare, Square, Send, AlertTriangle, FileText, Clipboard, Megaphone, HeartPulse, ShieldAlert, MessageCircle } from 'lucide-react';
 
 export const CaregiverDashboard = () => {
-  const { currentUser, shifts, reports, checkIn, checkOut, toggleChecklistItem, submitReport, forms, submitFormResponse, announcements } = useLifecare();
+  const { currentUser, users, shifts, reports, checkIn, checkOut, toggleChecklistItem, submitReport, forms, submitFormResponse, announcements } = useLifecare();
   const [activeTab, setActiveTab] = useState<'shift' | 'reports'>('shift');
   
+  const [showCheckoutModal, setShowCheckoutModal] = useState(false);
+  const [handoverNote, setHandoverNote] = useState('');
+
   // Find today's active or scheduled shift for this caregiver
   const todayShift = shifts.find(s => 
     s.caregiverId === currentUser?.id && 
@@ -38,6 +41,20 @@ export const CaregiverDashboard = () => {
 
   const isCheckedIn = todayShift ? !!todayShift.checkIn : false;
   const isCheckedOut = todayShift ? !!todayShift.checkOut : false;
+
+  const currentClient = todayShift ? users.find(u => u.id === todayShift.clientId) : null;
+  const lastCompletedShift = currentClient ? shifts
+      .filter(s => s.clientId === currentClient.id && s.status === 'completed' && s.checkOut && s.id !== todayShift?.id)
+      .sort((a, b) => new Date(b.checkOut!).getTime() - new Date(a.checkOut!).getTime())[0] : null;
+
+
+  const performCheckOut = async () => {
+      if (todayShift) {
+          await checkOut(todayShift.id, handoverNote);
+          setShowCheckoutModal(false);
+          setHandoverNote('');
+      }
+  };
 
   const handleReportSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -160,7 +177,7 @@ export const CaregiverDashboard = () => {
                         {(isCheckedIn || isCheckedOut) && (
                         <div className="flex gap-4 flex-wrap">
                             {!isCheckedOut && (
-                                <Button onClick={() => checkOut(todayShift.id)} className="flex-1 bg-red-400 hover:bg-red-500 text-white shadow-none">
+                                <Button onClick={() => setShowCheckoutModal(true)} className="flex-1 bg-red-400 hover:bg-red-500 text-white shadow-none">
                                 Registrar Saída 🚪
                                 </Button>
                             )}
@@ -178,6 +195,39 @@ export const CaregiverDashboard = () => {
                     </div>
                     </div>
                 </div>
+
+                {/* PRONTUÁRIO & CONTEXTO CLÍNICO */}
+                {!isCheckedOut && (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        {/* Quadro Clínico / Prontuário */}
+                        <div className="bg-white p-6 rounded-3xl shadow-sm border-l-4 border-blue-500 flex flex-col h-full">
+                            <h3 className="font-bold text-[#141C4D] flex items-center mb-3">
+                                <HeartPulse size={20} className="mr-2 text-blue-500" /> Prontuário do Paciente
+                            </h3>
+                            <div className="bg-blue-50 p-4 rounded-xl text-sm text-blue-900 border border-blue-100 flex-1 whitespace-pre-wrap overflow-y-auto max-h-[200px]">
+                                {currentClient?.prontuario || "Nenhum contexto clínico registrado pela família até o momento."}
+                            </div>
+                        </div>
+
+                        {/* Handover e SOS */}
+                        <div className="space-y-6 flex flex-col h-full">
+                            {lastCompletedShift?.handoverNote && (
+                                <div className="bg-yellow-50 p-6 rounded-3xl shadow-sm border border-yellow-200">
+                                    <h3 className="font-bold text-yellow-800 flex items-center mb-2">
+                                        <MessageCircle size={18} className="mr-2" /> Passagem de Plantão Anterior
+                                    </h3>
+                                    <p className="text-sm text-yellow-700 font-medium mb-1">
+                                        De: {lastCompletedShift.caregiverName} ({format(new Date(lastCompletedShift.checkOut!), "dd/MM HH:mm")})
+                                    </p>
+                                    <p className="text-sm text-gray-800 bg-white p-3 rounded-lg border border-yellow-100 italic">
+                                        "{lastCompletedShift.handoverNote}"
+                                    </p>
+                                </div>
+                            )}
+
+                        </div>
+                    </div>
+                )}
 
                 {/* Checklist Section */}
                 {isCheckedIn && (
@@ -253,6 +303,33 @@ export const CaregiverDashboard = () => {
                   )}
               </div>
           </div>
+      )}
+
+      {/* Checkout Handover Modal */}
+      {showCheckoutModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 md:p-8 animate-fade-in">
+            <h3 className="text-2xl font-bold text-[#141C4D] mb-2">Finalizando Plantão</h3>
+            <p className="text-gray-500 text-sm mb-6">Deixe uma mensagem de passagem de plantão para o seu colega que assumirá a seguir.</p>
+            
+            <div className="mb-6">
+                <label className="block text-sm font-bold text-[#141C4D] mb-2 flex items-center">
+                    <MessageCircle size={16} className="mr-2 text-[#13808E]" /> Passagem de Plantão (Resumo da Noite/Dia)
+                </label>
+                <textarea 
+                    className="w-full border rounded-xl p-4 bg-gray-50 min-h-[120px] outline-none focus:border-[#13808E]"
+                    placeholder="Ex: O Sr. João aceitou bem o almoço, mas se recusou a tomar a Losartana às 14h. Deixei toalhas limpas do lado da cama."
+                    value={handoverNote}
+                    onChange={(e) => setHandoverNote(e.target.value)}
+                />
+            </div>
+            
+            <div className="flex justify-end gap-3">
+                <Button variant="secondary" onClick={() => setShowCheckoutModal(false)}>Voltar</Button>
+                <Button onClick={performCheckOut} className="bg-red-500 hover:bg-red-600 shadow-none border-red-500">Confirmar Saída Definitiva</Button>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Report Modal */}
