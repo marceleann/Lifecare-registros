@@ -3,7 +3,7 @@ import { useLifecare } from '../context/LifecareContext';
 import { Button } from '../components/Button';
 import { format, isSameDay } from 'date-fns';
 import ptBR from 'date-fns/locale/pt-BR';
-import { Clock, MapPin, CheckSquare, Square, Send, AlertTriangle, FileText, Clipboard, Megaphone, HeartPulse, ShieldAlert, MessageCircle } from 'lucide-react';
+import { Clock, CheckSquare, Square, Send, AlertTriangle, FileText, Clipboard, Megaphone, HeartPulse, ShieldAlert, MessageCircle } from 'lucide-react';
 
 export const CaregiverDashboard = () => {
   const { currentUser, users, shifts, reports, checkIn, checkOut, toggleChecklistItem, submitReport, forms, submitFormResponse, announcements } = useLifecare();
@@ -154,10 +154,6 @@ export const CaregiverDashboard = () => {
                     <div className="flex justify-between items-start mb-8">
                         <div>
                         <h2 className="text-3xl font-bold mb-2">{todayShift.clientName}</h2>
-                        <div className="flex items-center text-[#99FFB6]">
-                            <MapPin size={18} className="mr-2" />
-                            <span>Rua das Flores, 123 - Apt 401</span>
-                        </div>
                         </div>
                         <div className="text-right">
                         <p className="text-sm opacity-70">Horário Previsto</p>

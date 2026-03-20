@@ -6,7 +6,7 @@ import { useNavigate } from 'react-router-dom';
 
 // Added optional children typing to handle cases where consumers might trigger strict property checks
 export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
-  const { currentUser, logout, notifications, refreshData, isLoading, updateAvatar, shifts, emergencies } = useLifecare();
+  const { currentUser, logout, notifications, refreshData, isLoading, shifts, emergencies } = useLifecare();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -129,37 +129,7 @@ export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) =
       setIsSidebarOpen(false); // Close mobile menu if open
   };
 
-  const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-      const file = e.target.files?.[0];
-      if (!file) return;
-      
-      const reader = new FileReader();
-      reader.onload = (event) => {
-          const img = new Image();
-          img.onload = () => {
-              const canvas = document.createElement('canvas');
-              const size = 150;
-              canvas.width = size;
-              canvas.height = size;
-              const ctx = canvas.getContext('2d');
-              if (!ctx) return;
-              
-              // Draw image centered and scaled (cover logic)
-              const scale = Math.max(size / img.width, size / img.height);
-              const x = (size / scale - img.width) / 2;
-              const y = (size / scale - img.height) / 2;
-              
-              ctx.fillStyle = '#FFFFFF';
-              ctx.fillRect(0, 0, size, size);
-              ctx.drawImage(img, 0, 0, img.width, img.height, x * scale, y * scale, img.width * scale, img.height * scale);
-              
-              const base64 = canvas.toDataURL('image/jpeg', 0.8);
-              if (updateAvatar) updateAvatar(base64);
-          };
-          img.src = event.target?.result as string;
-      };
-      reader.readAsDataURL(file);
-  };
+
 
   const NavItem = ({ icon: Icon, label, path }: { icon: any, label: string, path: string }) => (
     <button 
@@ -214,20 +184,14 @@ export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) =
         </div>
 
         <div className="p-6">
-          <div className="flex items-center space-x-3 mb-8 bg-[#F5F7FA] p-3 rounded-xl border border-gray-100 group relative">
-            <label className="relative cursor-pointer block flex-shrink-0">
-                <input type="file" accept="image/*" className="hidden" onChange={handleAvatarUpload} />
-                <div className="relative w-12 h-12 rounded-full border-2 border-[#13808E] overflow-hidden bg-white shadow-sm">
-                    <img 
-                      src={currentUser?.avatar || `https://ui-avatars.com/api/?name=${currentUser?.name || 'User'}&background=random`} 
-                      alt="Avatar" 
-                      className="w-full h-full object-cover" 
-                    />
-                    <div className="absolute inset-0 bg-black bg-opacity-60 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
-                        <span className="text-[9px] text-white font-bold text-center leading-tight">MUDAR<br/>FOTO</span>
-                    </div>
-                </div>
-            </label>
+          <div className="flex items-center space-x-3 mb-8 bg-[#F5F7FA] p-3 rounded-xl border border-gray-100">
+            <div className="w-12 h-12 rounded-full border-2 border-[#13808E] overflow-hidden bg-white shadow-sm flex-shrink-0">
+                <img 
+                  src={`https://ui-avatars.com/api/?name=${encodeURIComponent(currentUser?.name || 'User')}&background=13808E&color=fff&bold=true`} 
+                  alt="Avatar" 
+                  className="w-full h-full object-cover" 
+                />
+            </div>
             <div className="overflow-hidden">
               <p className="text-sm font-bold text-[#141C4D] truncate" title={currentUser?.name}>{currentUser?.name}</p>
               <p className="text-xs text-gray-500 capitalize truncate">{currentUser?.role === 'caregiver' ? 'Cuidador(a)' : currentUser?.role}</p>

@@ -16,7 +16,8 @@ export const Reports = () => {
         r.generalState.toLowerCase().includes(searchTerm.toLowerCase());
     
     if (currentUser?.role === 'client') {
-        return matchesSearch && r.clientName === currentUser.name; 
+        // Usa clientId quando disponível, senão fallback para clientName
+        return matchesSearch && ((r as any).clientId ? (r as any).clientId === currentUser.id : r.clientName === currentUser.name); 
     } else if (currentUser?.role === 'caregiver') {
         return matchesSearch && r.caregiverName === currentUser.name;
     }

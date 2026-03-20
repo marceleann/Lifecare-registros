@@ -52,6 +52,7 @@ export interface Report {
   id: string;
   shiftId: string;
   caregiverName: string;
+  clientId?: string;
   clientName: string;
   date: string;
   generalState: string;

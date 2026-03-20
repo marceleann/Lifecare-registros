@@ -29,7 +29,7 @@ interface LifecareContextType {
   login: (email: string, role: string, password?: string) => Promise<boolean>;
   logout: () => void;
   resetPassword: (email: string) => Promise<boolean>;
-  updateUserPassword: (email: string, newPassword: string) => void; 
+
   checkIn: (shiftId: string) => Promise<void>;
   checkOut: (shiftId: string, handoverNote?: string) => Promise<void>;
   toggleChecklistItem: (shiftId: string, itemId: string) => void;
@@ -206,14 +206,18 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
 
   const submitReport = async (reportData: any) => {
     if (!currentUser) return;
+    // Resolve clientName and clientId from the associated shift
+    const shift = shifts.find(s => s.id === reportData.shiftId);
     const newReport = {
       ...reportData,
       caregiverName: currentUser.name,
+      clientName: shift?.clientName || 'Não identificado',
+      clientId: shift?.clientId || '',
       date: new Date().toISOString()
     };
     await addDocument('reports', newReport);
     addNotification("Relatório salvo.");
-    sendEmail(generateReportEmail(currentUser.name, reportData.clientName || "Cliente", reportData.generalState));
+    sendEmail(generateReportEmail(currentUser.name, newReport.clientName, reportData.generalState));
   };
 
   const addUser = async (userData: any) => {
@@ -353,7 +357,7 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
 
   const refreshData = async () => { };
   const resetSystemData = () => {  };
-  const updateUserPassword = () => {  };
+
 
   const exportToGoogleSheets = (data: any[], filename: string) => {
     if (!data.length) return;
@@ -386,7 +390,7 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
   return (
     <LifecareContext.Provider value={{
       currentUser, users, shifts, reports, forms, announcements, isLoading,
-      login, logout, resetPassword, updateUserPassword,
+      login, logout, resetPassword,
       checkIn, checkOut, toggleChecklistItem, submitReport,
       createForm, submitFormResponse, addUser, updateClientChecklist,
       updateAvatar, updateProntuario, triggerSOS, resolveEmergency,
