@@ -35,6 +35,7 @@ export interface Shift {
   handoverNote?: string; // Passagem de plantão
   status: 'scheduled' | 'active' | 'completed';
   checklist: ChecklistItem[];
+  acknowledgedLate?: boolean;
 }
 
 export interface Emergency {
