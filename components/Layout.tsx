@@ -1,12 +1,12 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { useLifecare } from '../context/LifecareContext';
-import { LogOut, Menu, X, User as UserIcon, Calendar, Activity, ClipboardList, LayoutDashboard, RefreshCw } from 'lucide-react';
+import { LogOut, Menu, X, User as UserIcon, Calendar, Activity, ClipboardList, LayoutDashboard } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 
 // Added optional children typing to handle cases where consumers might trigger strict property checks
 export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) => {
-  const { currentUser, logout, notifications, refreshData, isLoading, shifts, emergencies } = useLifecare();
+  const { currentUser, logout, notifications, isLoading, shifts, emergencies } = useLifecare();
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const navigate = useNavigate();
 
@@ -124,10 +124,6 @@ export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) =
     navigate('/');
   };
 
-  const handleRefresh = async () => {
-      await refreshData();
-      setIsSidebarOpen(false); // Close mobile menu if open
-  };
 
 
 
@@ -205,16 +201,6 @@ export const Layout: React.FC<{ children?: React.ReactNode }> = ({ children }) =
             {currentUser?.role === 'admin' && (
               <NavItem icon={UserIcon} label="Equipe" path="/team" />
             )}
-            
-            {/* Sync Button */}
-            <button 
-                onClick={handleRefresh}
-                disabled={isLoading}
-                className="flex items-center space-x-3 w-full p-4 rounded-xl transition-all text-gray-600 hover:bg-gray-100 font-medium disabled:opacity-50"
-            >
-                <RefreshCw size={20} className={isLoading ? "animate-spin text-[#13808E]" : "text-gray-500"} />
-                <span>{isLoading ? 'Sincronizando...' : 'Sincronizar Dados'}</span>
-            </button>
           </nav>
         </div>
 

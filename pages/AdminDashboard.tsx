@@ -405,8 +405,8 @@ export const AdminDashboard = () => {
                               <th className="pb-3 text-left">Cliente</th>
                               <th className="pb-3 text-center">Entrada Agendada</th>
                               <th className="pb-3 text-center">Entrada Real</th>
-                              <th className="pb-3 text-center">Saída Agendada</th>
                               <th className="pb-3 text-center">Saída Real</th>
+                              <th className="pb-3 text-center">Checklist</th>
                           </tr>
                       </thead>
                       <tbody>
@@ -415,6 +415,9 @@ export const AdminDashboard = () => {
                           ) : (
                               todayShifts.map(shift => {
                                   const isLate = !shift.checkIn && (now - new Date(shift.startScheduled).getTime()) > 15 * 60000;
+                                  const completedItems = shift.checklist ? shift.checklist.filter(i => i.completed).length : 0;
+                                  const totalItems = shift.checklist ? shift.checklist.length : 0;
+                                  const checklistPercent = totalItems > 0 ? Math.round((completedItems / totalItems) * 100) : 0;
                                   return (
                                   <tr key={shift.id} className="border-b border-gray-50 hover:bg-gray-50/50 transition-colors">
                                       <td className="py-4">
@@ -429,16 +432,27 @@ export const AdminDashboard = () => {
                                       </td>
                                       <td className="py-4 font-semibold text-[#141C4D] text-sm">
                                         <h4 className="font-bold text-[#141C4D] flex items-center">{shift.caregiverName} {shift.acknowledgedLate && <span className="ml-2 text-xs bg-red-100 text-red-700 px-2 py-0.5 rounded-full">Atrasado (Ciente)</span>}</h4>
-                                        <p className="text-sm text-gray-500">Paciente: {shift.clientName}</p>
                                       </td>
                                       <td className="py-4 text-sm text-gray-600">{shift.clientName}</td>
                                       <td className="py-4 text-center text-sm font-medium">{format(new Date(shift.startScheduled), 'HH:mm')}</td>
                                       <td className="py-4 text-center text-sm">
                                           {shift.checkIn ? <span className="text-green-600 font-bold bg-green-50 px-2 py-1 rounded">{format(new Date(shift.checkIn), 'HH:mm')}</span> : '-'}
                                       </td>
-                                      <td className="py-4 text-center text-sm font-medium">{format(new Date(shift.endScheduled), 'HH:mm')}</td>
                                       <td className="py-4 text-center text-sm">
                                           {shift.checkOut ? <span className="text-green-600 font-bold bg-green-50 px-2 py-1 rounded">{format(new Date(shift.checkOut), 'HH:mm')}</span> : '-'}
+                                      </td>
+                                      <td className="py-4 text-center">
+                                          {totalItems > 0 ? (
+                                              <span className={`px-2 py-1 rounded text-xs font-bold ${
+                                                  checklistPercent === 100 ? 'bg-green-100 text-green-700' :
+                                                  checklistPercent > 0 ? 'bg-yellow-100 text-yellow-700' :
+                                                  'bg-gray-100 text-gray-500'
+                                              }`}>
+                                                  {completedItems}/{totalItems} ({checklistPercent}%)
+                                              </span>
+                                          ) : (
+                                              <span className="text-xs text-gray-400">—</span>
+                                          )}
                                       </td>
                                   </tr>
                                   )
@@ -447,6 +461,56 @@ export const AdminDashboard = () => {
                       </tbody>
                   </table>
               </div>
+
+              {/* Detalhamento dos Checklists */}
+              {todayShifts.filter(s => s.checklist && s.checklist.length > 0).length > 0 && (
+                  <div className="mt-8 border-t border-gray-100 pt-6">
+                      <h3 className="text-lg font-bold text-[#141C4D] mb-4 flex items-center">
+                          <CheckSquare className="mr-2 text-[#13808E]" size={20} /> Checklists Detalhados (Hoje)
+                      </h3>
+                      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                          {todayShifts.filter(s => s.checklist && s.checklist.length > 0).map(shift => {
+                              const completed = shift.checklist.filter(i => i.completed).length;
+                              const total = shift.checklist.length;
+                              return (
+                                  <div key={`cl-${shift.id}`} className="bg-gray-50 rounded-2xl p-5 border border-gray-100">
+                                      <div className="flex justify-between items-center mb-3">
+                                          <div>
+                                              <p className="font-bold text-[#141C4D] text-sm">{shift.caregiverName}</p>
+                                              <p className="text-xs text-gray-500">Paciente: {shift.clientName}</p>
+                                          </div>
+                                          <span className={`text-xs font-bold px-3 py-1 rounded-full ${
+                                              completed === total ? 'bg-green-100 text-green-700' : 'bg-orange-100 text-orange-700'
+                                          }`}>
+                                              {completed}/{total} concluídos
+                                          </span>
+                                      </div>
+                                      <div className="w-full bg-gray-200 rounded-full h-2 mb-3">
+                                          <div 
+                                              className={`h-2 rounded-full transition-all ${completed === total ? 'bg-green-500' : 'bg-[#13808E]'}`}
+                                              style={{ width: `${total > 0 ? (completed / total) * 100 : 0}%` }}
+                                          />
+                                      </div>
+                                      <div className="space-y-1 max-h-48 overflow-y-auto">
+                                          {shift.checklist.map(item => (
+                                              <div key={item.id} className={`flex items-center gap-2 text-sm p-2 rounded-lg ${item.completed ? 'bg-green-50' : 'bg-white border border-gray-100'}`}>
+                                                  <span className={`w-5 h-5 rounded flex items-center justify-center text-xs shrink-0 ${
+                                                      item.completed ? 'bg-green-500 text-white' : 'border-2 border-gray-300'
+                                                  }`}>
+                                                      {item.completed ? '✓' : ''}
+                                                  </span>
+                                                  <span className={item.completed ? 'text-gray-500 line-through' : 'text-gray-800 font-medium'}>{item.label}</span>
+                                                  {item.time && <span className="text-[10px] text-[#13808E] bg-[#E0F2F1] px-1.5 py-0.5 rounded ml-auto shrink-0">{item.time}</span>}
+                                                  {item.required && !item.completed && <span className="text-[10px] text-red-500 ml-auto shrink-0">Obrig.</span>}
+                                              </div>
+                                          ))}
+                                      </div>
+                                  </div>
+                              );
+                          })}
+                      </div>
+                  </div>
+              )}
           </div>
       )}
 
