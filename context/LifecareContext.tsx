@@ -174,8 +174,23 @@ export const LifecareProvider = ({ children }: { children?: React.ReactNode }) =
       await sendPasswordResetEmail(auth, email);
       addNotification("Link enviado com sucesso.");
       return true;
-    } catch (e) {
-      alert("Erro ao solicitar redefinição.");
+    } catch (e: any) {
+      console.error("Erro resetPassword:", e);
+      let msg = "Erro ao solicitar redefinição de senha.";
+      if (e.code === 'auth/user-not-found') {
+        msg = "Nenhuma conta encontrada com este email.";
+      } else if (e.code === 'auth/invalid-email') {
+        msg = "Email inválido. Verifique o formato.";
+      } else if (e.code === 'auth/too-many-requests') {
+        msg = "Muitas tentativas. Aguarde alguns minutos.";
+      } else if (e.code === 'auth/invalid-api-key') {
+        msg = "Erro de configuração: API Key do Firebase inválida. Verifique as variáveis de ambiente.";
+      } else if (e.code === 'auth/unauthorized-continue-uri') {
+        msg = "Domínio não autorizado no Firebase. Adicione o domínio nas configurações do Firebase Auth.";
+      } else if (e.message) {
+        msg = `Erro: ${e.message}`;
+      }
+      alert(msg);
       return false;
     }
   };
